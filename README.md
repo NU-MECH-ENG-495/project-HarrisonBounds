@@ -1,26 +1,100 @@
-# Project Proposal for C++
-For my project, I aim to implement and test code on a physical robotic system, aligning with my major in Robotics. I have chosen to work with the Unitree Robot dogs available in our lab, focusing on enabling them to navigate a space using pathfinding algorithms. While many pathfinding algorithms perform well in static environments, real-world scenarios often involve dynamic obstacles such as moving objects, people, or other robots. My goal is to implement and refine a pathfinding and exploration algorithm that allows the robot dog to successfully navigate a 3D environment with both static and dynamic obstacles.
+# Interactive ROS2 Path Planner
 
-The first step toward achieving this goal is to interface with the Unitree robot dog's Software Development Kit (SDK) and thoroughly understand the existing codebase. This will involve studying how the robot moves, what sensors it utilizes (e.g., cameras, LiDAR, IMU), and how it processes environmental data. The SDK is publicly available on Unitree's GitHub repository, which I will clone and explore to build a foundation for my project.
+---
 
-### Software Development in the First Step:
+## Who is this for?
+This project was made to read slam maps and dynamically plan paths in RVIZ using them. Our packages are tested with ROS2 Jazzy Distribution and fall under an MIT License Agreement. 
 
-- SDK Familiarization: I will begin by setting up the SDK, running basic motion control scripts, and analyzing the sensor data output. This will help me understand the robot's capabilities and limitations.
+These packages can read black and white PNG maps and display them as an occupancy grid. We are currently working on being able to read PGM files as those are pretty common for SLAM applications. Once the map is read in using the **spawn_map** package, you can dynamically visualize the shortest path from the start node to the goal node with interactive markers! Just drag them around and see the path update automatically. In the future we would like to add additional path planning algorithms, but due to time constraints we have not been able to pursue this.
 
-- Environment Simulation: Using the SDK, I will create a simulated environment to test basic navigation algorithms before deploying them on the physical robot. This will allow me to debug and refine the code in a controlled setting.
+---
 
-- Basic Navigation Implementation: I will implement a simple pathfinding algorithm (e.g., A* or Dijkstra's) to enable the robot to navigate from a starting point to a predefined destination in a static environment. This will serve as a baseline for more complex dynamic obstacle avoidance.
+## Setup Instructions
 
-### Defining Success:
-Success in the first phase will be measured by the robot's ability to:
+Please make sure you have ROS2 Jazzy installed on your machine. Instructions can be found here: https://docs.ros.org/en/jazzy/Installation.html
 
-- Navigate from a specified starting point to a destination in a static environment without collisions.
+Setup your files similar to this (need a workspace, src, and repo)
 
-- Utilize sensor data (e.g., LiDAR or camera input) to detect and avoid static obstacles in its path.
+```
+cd ~/ws/pathplanner/src/
 
-- Operate autonomously for a specified period of time (e.g., 5-10 minutes) without human intervention.
+git clone <this repo>
 
-### Future Steps:
-Once the robot can successfully navigate a static environment, I will expand the project to include dynamic obstacles. Success in this phase will involve the robot adapting its path in real-time to avoid moving objects while still reaching its destination. The final goal is to enable the robot to explore and map an unknown 3D environment, dynamically adjusting its path as it encounters new obstacles.
+cd ../..
 
-By the end of this project, I aim to have a fully functional implementation of a pathfinding and exploration algorithm that demonstrates the robot's ability to navigate complex, real-world environments. This will not only advance my understanding of robotics and pathfinding but also contribute to the lab's ongoing research in autonomous systems.
+colcon build
+
+Ctrl+Shift+T (Open new terminal tab)
+
+source install/setup.bash
+
+ros2 launch bringup bringup.launch.xml
+
+OR 
+
+Run each package individually to see how they work separately
+
+```
+
+### Running a Custom Map
+
+When running a custom map, there are two options. There is a `generate_custom_occupancy_grid` node in the spawn_map package that manually creates a map via an array of values where 100 represents a wall and 0 represents a free area. To make your own map manually you can edit these values, or create them with an algorithm using a for loop
+
+Another option is reading your own file. If you want to read your own PNG map file, make sure its in the `maps` folder in the `spawn_map` package. Then in the `bringup.launch.xml` launchfile, edit the `image_file_path` parameter for the `generate_occupancy_grid` node to the one that matches the name of your map. 
+
+---
+
+### Parameters
+
+Depending on what map you want to read, there are a few changes that may need to be made to make the sure path updates as quickly as possible.
+
+- Map Resolution
+- Free threshold
+- Occupied Threshold
+- Map Downsample size
+
+Each of these parameters are in the `generate_occupancy_grid` node and require tuning for specific use cases
+
+---
+
+## Package Descriptions 
+
+##### spawn_map
+
+Reads a custom PNG map file and displays in it RVIZ.
+
+##### pathplanner
+
+The driver package for this project. Creates the interactive markers identified as the start and goal nodes. Calculates the path between these nodes using the a star algorithm and multi threading.
+
+##### bringup
+
+Houses the launch file for running the other two packages. Also specifies the config file for adding components in rviz.
+
+---
+
+## A Star Planning Algorithm
+
+1. **Inputs**:
+   - **Start Position**: (`start_x_`, `start_y_`) in world coordinates.
+   - **Goal Position**: (`goal_x_`, `goal_y_`) in world coordinates.
+   - **Occupancy Grid**: A 2D grid where each cell is either free (0), occupied (100), or unknown (-1).
+
+2. **Grid Representation**:
+   - World coordinates are converted to grid cells using `worldToGrid`.
+   - Each cell is represented by a `GridCell` structure (`x`, `y` indices).
+
+3. **Cost Functions**:
+   - **`g_cost`**: Actual cost from the start to the current cell.
+   - **`h_cost`**: Heuristic cost (Euclidean distance) from the current cell to the goal.
+   - **`f_cost`**: Total cost (`f_cost = g_cost + h_cost`), used to prioritize cells.
+
+4. **Exploration**:
+   - Uses a **priority queue** (`open_list`) to explore cells with the lowest `f_cost` first.
+   - Keeps track of visited cells in a **closed set** to avoid reprocessing.
+
+5. **Path Reconstruction**:
+   - Once the goal is reached, the path is reconstructed by backtracking from the goal to the start using a **parent map**.
+
+6. **Output**:
+   - The path is converted back to world coordinates and published as a `nav_msgs::msg::Path`.
